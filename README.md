@@ -7,6 +7,12 @@ GUI-based PDF Merger
 
 gPdfMerge is a simple utility written in twinBASIC mainly for me to try out using pdfium.dll, Google's open source PDF utility. It will merge the selected PDFs together, either into a new file, or into the first file on the list. You can optionally specify which pages in each document should be merged, and if you're appending the first in list, where to insert them at. That's all there is to it right now; just a brief experiment before I make a 64bit version of a more complex PDF control.
 
+**Build notes:**\
+The project is configured as follows:\
+-The project's root folder should contain the .twinproj file, and folders `win32` and `win64` with the respective bitness version of pdfium.dll\
+-The compiled project must have pdfium.dll in the same folder with the .exe (the build output is set to \win32 and \win64).
+
+
 One thing of interest, all the VB6 samples didn't have save functionality. I wasn't positive on how to implement it at first; it uses a very VB/tB unfriendly method:
 
 ```c
@@ -45,9 +51,8 @@ The code opens for write the output using `CreateFile` prior to calling `FPDF_Sa
             Dim cbRet As Long
             Return WriteFile(hFileOut, ByVal pData, size, cbRet, vbNullPtr)
         End If
-```
-
     End Function
+```
 
 Et voilà.
 
