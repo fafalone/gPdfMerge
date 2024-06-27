@@ -1,0 +1,155 @@
+
+Module modMain
+'gPdfMerge v1.0.6
+'Last update: 27 Jun 2024
+'by Jon Johnson (fafalone)
+'See full comments in modPdfium.twin
+
+'Startup, command line handling, and utility function
+
+' Command line usage:
+' Merge: gPdfMerge.exe /i "C:\...\Input1.pdf" "C:\...\Input2.pdf" /o "C:\path\Output.pdf"
+' Append: gPdfMerge.exe /i "C:\...\Input1.pdf" "C:\...\Input2.pdf"
+' Append or merge with ranges and/or insert idx not support via command line in v1.0
+
+Public gUI As Boolean
+    Public Sub AppendLog(smsg As String)
+    If gUI Then
+        Form1.AddLog(smsg)
+    Else
+        Debug.Print smsg
+    End If
+    End Sub
+    
+    Sub Main()
+        If Command$() = "" Then
+            gUI = True
+            Form1.Show
+        Else
+            'On Error GoTo e0
+            Dim sFilesIn() As String, sFileOut As String
+            Dim sCmd As String = Command$()
+            sCmd = Trim$(sCmd)
+            If (Left$(sCmd, 2) <> "/i") And (Left$(sCmd, 2) <> "/o") Then
+                MsgBox "Invalid command.", vbCritical + vbOKOnly, App.Title
+                Exit Sub
+            End If
+            Dim ptOut As Long = InStr(sCmd, "/o " & ChrW$(34))
+            Dim sTmp As String
+            If ptOut = 0 Then 'Append
+                If (Left$(sCmd, 2) <> "/i") Then
+                    MsgBox "Invalid command.", vbCritical + vbOKOnly, App.Title
+                    Exit Sub
+                End If
+                sTmp = Mid$(sCmd, 3)
+                ParseQuotedList sTmp, sFilesIn
+            Else 'Merge
+                sFileOut = ParseOutput(sCmd, ptOut)
+                If (Left$(sCmd, 2) <> "/i") Then
+                    MsgBox "Invalid command.", vbCritical + vbOKOnly, App.Title
+                    Exit Sub
+                End If
+                sTmp = Mid$(sCmd, 3)
+                
+                ParseQuotedList sTmp, sFilesIn
+            End If
+            If UBound(sFilesIn) < 1 Then
+                MsgBox "Invalid command: Could not find two or more input files.", vbCritical + vbOKOnly, App.Title
+                Exit Sub
+            End If
+            If FilesToTPDF(sFilesIn, sFileOut) > 2 Then
+                Dim hr As Long
+                If sFileOut <> "" Then
+                    hr = MergePdfs(sFileOut, sList)
+                Else
+                    hr = AppendPdfs(sList)
+                End If
+                ' Dim i As Long
+                ' Debug.Print "Out=" & sFileOut
+                ' For i = 0 To UBound(sList)
+                '     Debug.Print "In(" & CStr(i) & ")=" & sList(i).sName & "::" & sList(i).sFullPath
+                ' Next
+            Else
+                MsgBox "Invalid command: Could not find two or more input files.", vbCritical + vbOKOnly, App.Title
+                Exit Sub
+            End If
+        End If
+        
+        
+        Exit Sub
+        e0:
+            Debug.Print "Failed to parse command line " & Command$()
+    End Sub
+    Private Function FilesToTPDF(sIn() As String, sOut As String) As Long
+        Dim i As Long
+        Dim j As Long
+        For i = 0 To UBound(sIn)
+           ' If PathFileExists(sIn(i)) Then
+                ReDim Preserve sList(j)
+                sList(j).sFullPath = sIn(i)
+                sList(j).sName = Right$(sIn(i), Len(sIn(i)) - InStrRev(sIn(i), "\"))
+                j += 1
+          '  End If
+        Next
+        Return j
+    End Function
+ 
+    Private Function ParseOutput(sCmd As String, pt As Long) As String
+        'Extract file from /o "file" and remove it
+        On Error GoTo e0
+        Dim i As Long
+        Dim sTmp As String
+        sTmp = Mid$(sCmd, pt + 4)
+        Debug.Print "PraseOutput sTmp1" & sTmp
+        sTmp = Left$(sTmp, InStr(sTmp, ChrW$(34)) - 1)
+        Debug.Print "PraseOutput sTmp2" & sTmp
+        sCmd = Replace$(sCmd, "/o " & ChrW$(34) & sTmp & ChrW$(34), "")
+        Debug.Print "PraseOutput " & sCmd & " :::: " & sTmp
+        Return sTmp
+    e0:
+        Debug.Print "Failed to parse output path::sCmd=" & sCmd
+    End Function
+    Public Sub ParseQuotedList(sIn As String, sOut() As String, Optional chrStop As String)
+    'Takes a string full of quoted items and converts them into an array
+    'chrStop terminates the search if found outside a quote
+    Debug.Print "PQL In->" & sIn
+    Dim i As Long, j As Long
+    Dim cch As String
+    Dim sHold As String
+    Dim iq As Boolean
+    ReDim sOut(0)
+    If InStr(sIn, Chr$(34)) Then
+      For i = 1 To Len(sIn)
+        cch = Mid$(sIn, i, 1)
+        If (chrStop = cch) And (iq = False) Then Exit Sub
+        If cch = Chr$(34) Then
+            If iq = True Then
+                'closing quote, add item
+                ReDim Preserve sOut(j)
+                sOut(j) = sHold
+                Debug.Print "PQL add " & sOut(j)
+                j = j + 1
+                sHold = ""
+                iq = False
+            Else
+                iq = True
+            End If
+        Else
+            If iq = True Then
+                sHold = sHold & cch
+            End If
+        End If
+      Next i
+    Else
+        'single item
+        ReDim sOut(0)
+        sOut(0) = sIn
+        If chrStop <> "" Then
+            If InStr(sIn, chrStop) Then
+                sOut(0) = Left$(sOut(0), InStr(sOut(0), chrStop) - 2)
+            End If
+        End If
+    End If
+
+    End Sub
+End Module

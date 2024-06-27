@@ -1,0 +1,432 @@
+Module modPdfium
+    'modPdfium - Pdfium functions for twinBASIC
+    'Last update: 27 Jun 2024
+    'by Jon Johnson (fafalone)
+    '
+
+    'Developed using pdfium builds by pvginkel,
+    '32bit: https://github.com/pvginkel/PdfiumBuild/blob/master/Builds/2018-04-08/Pdfium-x86-no_v8-no_xfa/pdfium.dll
+    '64bit: https://github.com/pvginkel/PdfiumBuild/blob/master/Builds/2018-04-08/Pdfium-x64-no_v8-no_xfa/pdfium.dll
+    'This is an older version; the exact version of pdfium used couldn't be determined (none released on date of 
+    'builds), the closest match seems to be pdfium 3392.
+    'Headers used for declares: https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/3392/public/
+    'Merge routine based on pdfium-cli: https://github.com/klippa-app/pdfium-cli
+    
+    'Note: This module will automatically initialize pdfium on first use, but
+    '      program exit routines must be made to call ShutdownPdfium.
+    
+    Public mInit As Boolean
+    
+    Public Type tPdfFile
+        sFullPath As String
+        sName As String
+        sMergePages As String
+    End Type
+    Public sList() As tPdfFile
+    Public nPdf As Long
+    Public sIdx As String
+    Private hFileOut As LongPtr
+     ' //
+    ' // Version number of the interface. Currently must be 1.
+    ' //   
+     ' //
+    ' // Method: WriteBlock
+    ' //          Output a block of data in your custom way.
+    ' // Interface Version:
+    ' //          1
+    ' // Implementation Required:
+    ' //          Yes
+    ' // Comments:
+    ' //          Called by function FPDF_SaveDocument
+    ' // Parameters:
+    ' //          pThis       -   Pointer to the structure itself
+    ' //          pData       -   Pointer to a buffer to output
+    ' //          size        -   The size of the buffer.
+    ' // Return value:
+    ' //          Should be non-zero if successful, zero for error.
+    ' //
+
+   ' typedef struct FPDF_FILEWRITE_ {
+    ' int version;
+
+    ' int (*WriteBlock)(struct FPDF_FILEWRITE_* pThis,
+                      ' const void* pData,
+                      ' unsigned long size);
+  ' } FPDF_FILEWRITE;
+    Private Type FPDF_FILEWRITE
+        version As Long
+        WriteBlock As LongPtr
+    End Type
+    Public Enum PdfiumSaveCopyFlags
+        FPDF_INCREMENTAL = 1
+    
+        FPDF_NO_INCREMENTAL = 2
+    
+        FPDF_REMOVE_SECURITY = 3
+    End Enum
+        
+    Public Enum PdfiumErrorCodes
+        FPDF_ERR_SUCCESS = 0  ' No error.
+
+        FPDF_ERR_UNKNOWN = 1  ' Unknown error.
+        FPDF_ERR_FILE = 2  ' File not found or could not be opened.
+
+        FPDF_ERR_FORMAT = 3  ' File not in PDF format or corrupted.
+
+        FPDF_ERR_PASSWORD = 4  ' Password required or incorrect password.
+        FPDF_ERR_SECURITY = 5  ' Unsupported security scheme.
+        FPDF_ERR_PAGE = 6  ' Page not found or content error.
+    ' #ifdef PDF_ENABLE_XFA
+        FPDF_ERR_XFALOAD = 7  ' Load XFA error.
+        FPDF_ERR_XFALAYOUT = 8  ' Layout XFA error.
+    End Enum
+  
+    #If Win64 Then
+    Private Declare PtrSafe Sub FPDF_InitLibrary Lib "PDFium" ()
+    Private Declare PtrSafe Sub FPDF_DestroyLibrary Lib "PDFium" ()
+    Private Declare PtrSafe Function FPDF_CreateNewDocument Lib "PDFium" () As LongPtr
+    Private Declare PtrSafe Function FPDF_LoadMemDocument Lib "PDFium" (ByVal pData As LongPtr, ByVal DataLen As Long, ByVal Password As String) As LongPtr
+    Private Declare PtrSafe Sub FPDF_CloseDocument Lib "PDFium" (ByVal hDoc As LongPtr)
+    Private Declare PtrSafe Function FPDF_GetPageCount Lib "PDFium" (ByVal hDoc As LongPtr) As Long
+    Private Declare PtrSafe Function FPDF_LoadPage Lib "PDFium" (ByVal hDoc As LongPtr, ByVal PageIdx As Long) As LongPtr
+    Private Declare PtrSafe Sub FPDF_ClosePage Lib "PDFium" (ByVal hPage As LongPtr)
+    Private Declare PtrSafe Function FPDF_ImportPages Lib "PDFium" (ByVal dest_doc As LongPtr, ByVal src_doc As LongPtr, ByVal pagerange As String, ByVal index As Long) As Long
+    Private Declare PtrSafe Function FPDF_SaveAsCopy Lib "PDFium" (ByVal document As LongPtr, pFileWrite As FPDF_FILEWRITE, ByVal flags As PdfiumSaveCopyFlags) As BOOL
+    Private Declare PtrSafe Function FPDF_GetLastError Lib "PDFium" () As Long
+    #Else
+    Private Declare Sub FPDF_InitLibrary Lib "PDFium" Alias "_FPDF_InitLibrary@0" ()
+    Private Declare Sub FPDF_DestroyLibrary Lib "PDFium" Alias "_FPDF_DestroyLibrary@0" ()
+    Private Declare Function FPDF_CreateNewDocument Lib "PDFium" Alias "_FPDF_CreateNewDocument@0" () As Long
+    Private Declare Function FPDF_LoadMemDocument Lib "PDFium" Alias "_FPDF_LoadMemDocument@12" (ByVal pData As Long, ByVal DataLen As Long, ByVal Password As String) As Long
+    Private Declare Sub FPDF_CloseDocument Lib "PDFium" Alias "_FPDF_CloseDocument@4" (ByVal hDoc As Long)
+    Private Declare Function FPDF_GetPageCount Lib "PDFium" Alias "_FPDF_GetPageCount@4" (ByVal hDoc As Long) As Long
+    Private Declare Function FPDF_LoadPage Lib "PDFium" Alias "_FPDF_LoadPage@8" (ByVal hDoc As Long, ByVal PageIdx As Long) As Long
+    Private Declare Sub FPDF_ClosePage Lib "PDFium" Alias "_FPDF_ClosePage@4" (ByVal hPage As Long)
+    Private Declare Function FPDF_ImportPages Lib "PDFium" Alias "_FPDF_ImportPages@16" (ByVal dest_doc As Long, ByVal src_doc As Long, ByVal pagerange As String, ByVal index As Long) As Long
+    Private Declare Function FPDF_SaveAsCopy Lib "PDFium" Alias "_FPDF_SaveAsCopy@12" (ByVal document As Long, pFileWrite As FPDF_FILEWRITE, ByVal flags As PdfiumSaveCopyFlags) As BOOL
+    Private Declare Function FPDF_GetLastError Lib "PDFium" Alias "_FPDF_GetLastError@0" () As Long
+    #End If
+
+
+    
+    Public Function GetPdfiumErrorCodesStr(lVal As Long) As String
+    Dim sRet As String
+     If lVal = FPDF_ERR_SUCCESS Then sRet = "FPDF_ERR_SUCCESS"
+     If lVal = FPDF_ERR_UNKNOWN Then sRet = "FPDF_ERR_UNKNOWN"
+     If lVal = FPDF_ERR_FILE Then sRet = "FPDF_ERR_FILE"
+     If lVal = FPDF_ERR_FORMAT Then sRet = "FPDF_ERR_FORMAT"
+     If lVal = FPDF_ERR_PASSWORD Then sRet = "FPDF_ERR_PASSWORD"
+     If lVal = FPDF_ERR_SECURITY Then sRet = "FPDF_ERR_SECURITY"
+     If lVal = FPDF_ERR_PAGE Then sRet = "FPDF_ERR_PAGE"
+     If lVal = FPDF_ERR_XFALOAD Then sRet = "FPDF_ERR_XFALOAD"
+     If lVal = FPDF_ERR_XFALAYOUT Then sRet = "FPDF_ERR_XFALAYOUT"
+    If sRet = "" Then sRet = "(unknown: " & lVal & ")"
+    GetPdfiumErrorCodesStr = sRet
+    End Function
+    
+    Public Sub InitPdfium()
+        If mInit = False Then
+            If App.IsInIDE Then
+                #If Win64 Then
+                AddDllDirectory(App.Path & "\win64")
+                #Else
+                AddDllDirectory(App.Path & "\win32")
+                #End If
+            End If
+            FPDF_InitLibrary
+            mInit = True
+            AppendLog "Successfully initialized pdfium..."
+        End If
+    End Sub
+    Public Sub ShutdownPdfium()
+        
+        On Error GoTo e0
+        If mInit Then
+            FPDF_DestroyLibrary
+        End If
+        Exit Sub
+        e0:
+        Debug.Print "Shutdown " & Err.Description
+    End Sub
+    
+    Public Function GetPdfPageCount(tPdf As tPdfFile) As Long
+        InitPdfium()
+        Dim hDoc As LongPtr
+        Dim pFile() As Byte
+        Dim hr As Long
+        Dim nPages As Long
+        hr = LoadFileBytes(tPdf.sFullPath, pFile)
+        If hr = S_OK Then
+            hDoc = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) - 1, vbNullString)
+            If hDoc Then
+                nPages = FPDF_GetPageCount(hDoc)
+                FPDF_CloseDocument hDoc
+            Else
+                AppendLog "GetPdfPageCount::Couldn't read " & tPdf.sName
+            End If
+        Else
+            AppendLog "GetPdfPageCount::Couldn't open " & tPdf.sName
+        End If
+        Return nPages
+    End Function
+    Public Function MergePdfs(sFileOut As String, tFilesIn() As tPdfFile, Optional bTemp As Boolean = False) As Long
+        InitPdfium()
+        
+        If UBound(tFilesIn) < 1 Then
+            AppendLog "Error: Two or more files must be selected to merge."
+            Return E_INVALIDARG
+        End If
+        AppendLog "Merging " & CStr(UBound(tFilesIn) + 1) & " pdf files..."
+        Dim uAttrib As FILE_ATTRIBUTES
+        If bTemp Then
+            uAttrib = FILE_ATTRIBUTE_HIDDEN 'Or FILE_ATTRIBUTE_TEMPORARY
+        Else
+            uAttrib = FILE_ATTRIBUTE_NORMAL
+        End If
+        'First, open the output file. No sense in doing the merge if we can't.
+        hFileOut = CreateFile(sFileOut, GENERIC_READ Or GENERIC_WRITE, FILE_SHARE_READ, vbNullPtr, CREATE_ALWAYS, uAttrib Or FILE_FLAG_WRITE_THROUGH, 0)
+        If hFileOut = INVALID_HANDLE_VALUE Then
+            AppendLog "Error creating output file: " & Err.LastDllError & ", " & GetSystemErrorString(Err.LastDllError)
+            Return Err.LastDllError
+        End If
+        
+        Dim hDocNew As LongPtr = FPDF_CreateNewDocument()
+        Dim hDocIn As LongPtr
+        Dim nPages As Long, nMerged As Long
+        Dim lRet As Long, hr As Long
+        Dim nInsIdx As Long
+        Dim pFile() As Byte
+        Dim i As Long
+        For i = 0 To UBound(tFilesIn)
+            ReDim pFile(0)
+            hDocIn = 0
+            hr = LoadFileBytes(tFilesIn(i).sFullPath, pFile)
+            If hr = S_OK Then
+                hDocIn = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) - 1, vbNullString)
+                If hDocIn Then
+                    nPages = FPDF_GetPageCount(hDocIn)
+                    If nPages Then
+                        nInsIdx = If((bTemp = True) And (sIdx <> "") And (i > 0), CLng(sIdx), nMerged)
+                
+                        If (tFilesIn(i).sMergePages <> "") Then
+                            lRet = FPDF_ImportPages(hDocNew, hDocIn, tFilesIn(i).sMergePages, nInsIdx)
+                            If lRet Then
+                                nPages = GetPageCountFromRange(tFilesIn(i).sMergePages)
+                            End If
+                        Else
+                            lRet = FPDF_ImportPages(hDocNew, hDocIn, vbNullString, nInsIdx)
+                        End If
+                        
+                        If lRet = 0 Then
+                            lRet = FPDF_GetLastError()
+                            AppendLog "Error " & GetPdfiumErrorCodesStr(lRet) & " merging pages from " & tFilesIn(i).sName
+                        Else
+                            AppendLog "Successfully merged " & nPages & " pages from " & tFilesIn(i).sName
+                            nMerged += nPages
+                            lRet = S_OK
+                        End If
+                    Else
+                        AppendLog "Error: No pages found in " & tFilesIn(i).sName & ":: skipping"
+                    End If
+                Else
+                    AppendLog "Error " & GetPdfiumErrorCodesStr(lRet) & " reading " & tFilesIn(i).sName
+                End If
+                FPDF_CloseDocument hDocIn
+            Else
+                AppendLog "Failed to load " & tFilesIn(i).sName & ": " & hr & ", " & GetSystemErrorString(hr)
+            End If
+        Next
+        
+        If nMerged Then
+            Dim tWrite As FPDF_FILEWRITE
+            tWrite.version = 1
+            tWrite.WriteBlock = AddressOf WriteBlock
+            If FPDF_SaveAsCopy(hDocNew, tWrite, FPDF_NO_INCREMENTAL) Then
+                If bTemp = False Then
+                    AppendLog "Successfully saved merged document (" & nMerged & " pages) to" & sFileOut
+                    'When new files don't show up right away, it's because the creating 
+                    'app didn't explicitly notify the shell of creation, leaving it to
+                    'only add it during a regular check.
+                    SHChangeNotify SHCNE_CREATE, SHCNF_PATHW, StrPtr(sFileOut)
+                End If
+                lRet = S_OK
+            Else
+ 
+                lRet = FPDF_GetLastError()
+                AppendLog "Error " & GetPdfiumErrorCodesStr(lRet) & " trying to save output file."
+            End If
+        Else
+            lRet = E_FAIL
+        End If
+        FPDF_CloseDocument hDocNew
+        CloseHandle hFileOut
+        Return lRet
+    End Function
+    
+    Public Function AppendPdfs(tFilesIn() As tPdfFile) As Long
+        'Appends additional PDFs to the first in the list
+        If UBound(tFilesIn) < 1 Then
+            AppendLog "Error: At least one additional file must be selected to append."
+            Return E_INVALIDARG
+        End If
+        Dim sTmp As String = String$(MAX_PATH, 0)
+        Dim sOut As String = GetFolderFromPath(tFilesIn(0).sFullPath)
+        Dim lRet As Long = GetTempFileName(sOut, "$PM", 0, sTmp)
+        Dim lAtr As FILE_ATTRIBUTES
+        sOut = TrimNullW(sTmp)
+        AppendLog "AppendPdfs::TempName=" & sOut
+        If MergePdfs(sOut, tFilesIn, True) = S_OK Then
+            Debug.Print "AppendPdfs::DeleteOrig=" & tFilesIn(0).sFullPath
+            Dim hr As Long = DeleteFileEx(tFilesIn(0).sFullPath)
+            If hr <> S_OK Then
+                AppendLog "Unable to modify " & tFilesIn(0).sName & ", Error " & hr & ": " & GetSystemErrorString(hr)
+                DeleteFileEx(sOut)
+                Return hr
+            End If
+            lAtr = GetFileAttributes(sOut)
+            lAtr = lAtr And Not FILE_ATTRIBUTE_HIDDEN
+            SetFileAttributes(sOut, lAtr)
+            If MoveFileEx(sOut, tFilesIn(0).sFullPath, MOVEFILE_WRITE_THROUGH Or MOVEFILE_REPLACE_EXISTING) Then
+                AppendLog "Successfully appended PDF."
+                SHChangeNotify SHCNE_UPDATEITEM, SHCNF_PATHW, StrPtr(tFilesIn(0).sFullPath)
+            Else
+                hr = Err.LastDllError
+                AppendLog "An error occured renaming the temp file; " & Err.LastDllError & ": " & GetSystemErrorString(Err.LastDllError) & vbCrLf & _
+                            "Merged pdf can be recovered from " & sOut
+                Return hr
+            End If
+        End If
+        Return S_OK
+    End Function
+    Private Function GetFolderFromPath(sFile As String) As String
+        If InStr(sFile, "\") Then
+        GetFolderFromPath = Left$(sFile, InStrRev(sFile, "\") - 1)
+        End If
+    End Function
+    Private Function TrimNullW(startstr As String) As String
+    TrimNullW = Left$(startstr, lstrlenW(ByVal StrPtr(startstr)))
+    End Function
+    Private Sub ClearReadOnly(sFile As String)
+    'Removes the read-only attribute
+    Dim lAtr As FILE_ATTRIBUTES
+    lAtr = GetFileAttributesW(StrPtr(sFile))
+    lAtr = lAtr And Not FILE_ATTRIBUTE_READONLY
+    Call SetFileAttributesW(StrPtr(sFile), lAtr)
+    End Sub
+    Private Function DeleteFileEx(sFile As String) As Long
+    'Deletes files even if they have Read Only set
+    Dim hr As Long
+    hr = DeleteFile(sFile)
+    If hr = 0 Then
+        ClearReadOnly sFile
+        hr = DeleteFile(sFile)
+    End If
+    If hr Then
+        Return S_OK
+    Else
+        Return Err.LastDllError
+    End If
+    End Function
+    Public Function GetPageCountFromRange(sRange As String) As Long
+        On Error GoTo e0
+        Dim sSub() As String
+        sSub = Split(sRange, ",")
+        Dim st1 As String, st2 As String
+        Dim n As Long
+        Dim i As Long
+        For i = 0 To UBound(sSub)
+            sSub(i) = Replace$(sSub(i), " ", "")
+            If InStr(sSub(i), "-") Then
+                st1 = Left$(sSub(i), InStr(sSub(i), "-") - 1)
+                st2 = Mid$(sSub(i), InStr(sSub(i), "-") + 1)
+                n += ((CLng(st2) - CLng(st1)) + 1)
+            Else 'Single page
+                n += 1
+            End If
+        Next
+        Return n
+        Exit Function
+    e0:
+        AppendLog "Error processing range " & ChrW$(34) & sRange & ChrW$(34)
+    End Function
+    Public Function ValidateRange(tPdf As tPdfFile) As Long
+        If tPdf.sMergePages = "" Then Return S_OK
+        On Error GoTo e0
+        Dim sSub() As String
+        sSub = Split(tPdf.sMergePages, ",")
+        Dim st1 As String, st2 As String
+        Dim nMax As Long
+        Dim nPages As Long = GetPdfPageCount(tPdf)
+        Dim i As Long
+        For i = 0 To UBound(sSub)
+            sSub(i) = Replace$(sSub(i), " ", "")
+            If InStr(sSub(i), "-") Then
+                st1 = Left$(sSub(i), InStr(sSub(i), "-") - 1)
+                st2 = Mid$(sSub(i), InStr(sSub(i), "-") + 1)
+                If CLng(st2) > nMax Then nMax = CLng(st2)
+                If CLng(st2) < CLng(st1) Then Return 2
+                If CLng(st2) > nPages Then Return 1
+            Else 'Single page
+                If CLng(sSub(i)) > nPages Then Return 1
+            End If
+        Next
+        Return S_OK
+        Exit Function
+    e0:
+        AppendLog "Error processing range " & ChrW$(34) & tPdf.sMergePages & ChrW$(34)
+    End Function
+ 
+    Public Function LoadFileBytes(ByVal sPath As String, pvFile() As Byte) As Long
+        Dim hFile As LongPtr
+        Dim cb As Long, cbHigh As Long, cbRet As Long
+        
+        hFile = CreateFile(sPath, GENERIC_WRITE Or FILE_WRITE_DATA Or FILE_READ_DATA Or GENERIC_READ, _
+                            FILE_SHARE_READ, vbNullPtr, OPEN_ALWAYS, FILE_FLAG_WRITE_THROUGH, 0&)
+                                
+        If hFile = INVALID_HANDLE_VALUE Then
+            AppendLog "Failed to open file " & sPath & ", error=" & Err.LastDllError & ", " & GetSystemErrorString(Err.LastDllError)
+            Return Err.LastDllError
+        End If
+            
+        cb = GetFileSize(hFile, cbHigh)
+        If cbHigh Then
+            'VB source files shouldn't be >2GB so not implementing the logic to handle this.
+            AppendLog "File too large, can't load " & sPath
+            CloseHandle hFile
+            Return E_BOUNDS
+        End If
+        If cb = 0 Then
+            AppendLog "Zero length file, can't load " & sPath
+            CloseHandle hFile
+            Return ERROR_BAD_LENGTH
+        End If
+
+            
+        ReDim pvFile(cb - 1)
+            
+            
+        If ReadFile(hFile, pvFile(0), cb, cbRet, vbNullPtr) = 0 Then
+        
+            AppendLog "An error occured reading " & sPath & ", Req=" & cb & ", read=" & cbRet & ", error=" & Err.LastDllError & ", " & GetSystemErrorString(Err.LastDllError)
+            CloseHandle hFile
+            Return Err.LastDllError
+        End If
+        
+        CloseHandle hFile
+        Return S_OK
+    End Function
+    
+    
+
+    
+    ' ' int (*WriteBlock)(struct FPDF_FILEWRITE_* pThis,
+                      ' ' const void* pData,
+                      ' ' unsigned long size);
+                      
+    Private Function WriteBlock CDecl(ByVal pThis As LongPtr, ByVal pData As LongPtr, ByVal size As Long) As Long
+        If hFileOut Then
+            Dim cbRet As Long
+            Return WriteFile(hFileOut, ByVal pData, size, cbRet, vbNullPtr)
+        End If
+    End Function
+End Module

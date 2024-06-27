@@ -1,0 +1,257 @@
+[Description("")]
+[FormDesignerId("C3B9FBBB-75B9-4EA4-A5AA-C3B0EE4D28D8")]
+[PredeclaredId]
+Class Form1
+    'gPdfMerge v1.0.6
+    'Last update: 27 Jun 2024
+    'by Jon Johnson (fafalone)
+    'See full comments in modPdfium.twin
+    
+    Private Const sStart As String = "Welcome to " & app.title & " v" & app.major & "." & app.minor & "." & app.build & vbCrLf & _
+                                    "Double-click this log to clear it."
+    
+    Public Sub AddLog(smsg As String)
+        Debug.Print smsg
+    txtStatus.Text = txtStatus.Text & smsg & vbCrLf
+    SendMessage txtStatus.hWnd, EM_SCROLL, SB_BOTTOM, ByVal 0&
+    End Sub
+    
+    Private Sub OnAddFiles() Handles cmdOpen.Click
+        Dim fod As New FileOpenDialog
+        Dim siaResult As IShellItemArray
+        Dim pEnum As IEnumShellItems
+        Dim siResult As IShellItem
+        Dim siDef As IShellItem
+        Dim tFilt As COMDLG_FILTERSPEC
+        Dim sFiltName As String = "PDF Files"
+        Dim sFiltSpec As String = "*.pdf"
+        Dim lpPath As LongPtr, sPath As String
+        Dim lpName As LongPtr, sName As String
+        Dim pc As Long
+        tFilt.pszName = StrPtr(sFiltName)
+        tFilt.pszSpec = StrPtr(sFiltSpec)
+        fod.SetTitle "Choose PDF files..."
+        fod.SetFileTypes 1, VarPtr(tFilt)
+        fod.SetOptions FOS_FILEMUSTEXIST Or FOS_ALLOWMULTISELECT
+ 
+        If siDef Is Nothing Then
+            SHGetKnownFolderItem FOLDERID_Documents, KF_FLAG_DEFAULT, 0, IID_IShellItem, siDef
+        End If
+        fod.SetDefaultFolder siDef
+        On Error Resume Next
+        fod.Show Me.hWnd
+        fod.GetResults siaResult
+        On Error GoTo 0
+        If siaResult IsNot Nothing Then
+            siaResult.EnumItems pEnum
+            Do While pEnum.Next(1, siResult) = S_OK
+                lpPath = 0: sPath = "": sName = ""
+                siResult.GetDisplayName(SIGDN_FILESYSPATH, lpPath)
+                siResult.GetDisplayName(SIGDN_NORMALDISPLAY, lpName)
+                If lpPath Then
+                    sPath = LPWSTRtoStr(lpPath)
+                    sName = LPWSTRtoStr(lpName)
+                    ReDim Preserve sList(nPdf)
+                    sList(nPdf).sFullPath = sPath
+                    sList(nPdf).sName = sName
+                    lstPdf.AddItem(sName)
+                    lstPdf.ItemData(lstPdf.NewIndex) = nPdf
+                    nPdf += 1
+                    AppendLog "Added file " & sName
+                End If
+                Set siResult = Nothing
+            Loop
+        End If
+    End Sub
+    
+    Private Sub OnSetOutputFile() Handles cmdSave.Click
+        Dim fsd As New FileSaveDialog
+        Dim siResult As IShellItem
+        Dim tFilt As COMDLG_FILTERSPEC
+        Dim sFiltName As String = "PDF Files"
+        Dim sFiltSpec As String = "*.pdf"
+        Dim lpPath As LongPtr, sPath As String
+        tFilt.pszName = StrPtr(sFiltName)
+        tFilt.pszSpec = StrPtr(sFiltSpec)
+        fsd.SetTitle "Set output file..."
+        fsd.SetFileTypes 1, VarPtr(tFilt)
+        fsd.SetDefaultExtension "pdf"
+        fsd.SetOptions FOS_OVERWRITEPROMPT Or FOS_NOREADONLYRETURN Or FOS_PATHMUSTEXIST
+        On Error Resume Next
+        fsd.Show Me.hWnd
+        fsd.GetResult siResult
+        On Error GoTo 0
+        If siResult IsNot Nothing Then
+            siResult.GetDisplayName(SIGDN_FILESYSPATH, lpPath)
+            If lpPath Then
+                sPath = LPWSTRtoStr(lpPath)
+                txtOut.Text = sPath
+            End If
+        End If
+    End Sub
+    
+    Private Sub OnLoad() Handles Form.Load
+        SHAutoComplete txtOut.hWnd, SHACF_FILESYS_DIRS
+    
+    End Sub
+ 
+    
+    Private Sub OnMoveDown() Handles UpDown1.DownClick
+        Dim i As Long = lstPdf.ListIndex
+        If (i < nPdf) And (i <> -1) Then
+            MoveItemDown i
+            RebuildList
+            lstPdf.ListIndex = i + 1
+            lstPdf.Selected(i + 1) = True
+            lstPdf.Refresh()
+        End If
+    End Sub
+    
+    Private Sub OnMoveUp() Handles UpDown1.UpClick
+        Dim i As Long = lstPdf.ListIndex
+        If i > 0 Then
+            MoveItemUp i
+            RebuildList
+            lstPdf.ListIndex = i - 1
+            lstPdf.Selected(i - 1) = True
+            lstPdf.Refresh()
+        End If
+    End Sub
+    
+    Private Sub OnMerge() Handles cmdMerge.Click
+        If nPdf = 0 Then
+            Beep
+            AppendLog "Error: No files loaded."
+            Exit Sub
+        ElseIf nPdf = 1 Then
+            AppendLog "Error: Two or more files must be loaded to merge."
+            Exit Sub
+        End If
+        Dim i As Long, r As Long
+        For i = 0 To UBound(sList)
+            r = ValidateRange(sList(i))
+            If r = 1 Then
+                AppendLog "Error: Range includes page numbers exceeding page count in " & sList(i).sName
+                Exit Sub
+            End If
+            If r = 2 Then
+                AppendLog "Error: When range is x-y, y must be greater than x; please correct range for " & sList(i).sName
+                Exit Sub
+            End If
+        Next
+        Dim lRet As Long
+        If Option1(0).Value = True Then
+            If txtOut.Text = "" Then
+                AppendLog "Error: You must set an output file."
+                lRet = 1
+            Else
+                lRet = MergePdfs(txtOut.Text, sList)
+            End If
+        Else
+            If txtIndex.Text <> "" Then
+                If CLng(txtIndex.Text) > (GetPdfPageCount(sList(0)) - 1) Then
+                    AppendLog "Error: Entered insert index cannot exceed number of pages in first document."
+                    Exit Sub
+                End If
+            End If
+            lRet = AppendPdfs(sList)
+        End If
+        If lRet = S_OK Then
+            If chkAutoClear.Value = vbChecked Then
+                Call OnRemoveAll
+            End If
+        End If
+    End Sub
+    
+    Private Sub OnUnload(Cancel As Integer) Handles Form.Unload
+ 
+        ShutdownPdfium
+    End Sub
+    
+    Private Sub MoveItemUp(idx As Long)
+        If idx = 0 Then Exit Sub 'Already at top
+        Dim tmp As tPdfFile
+        tmp = sList(idx - 1)
+        sList(idx - 1) = sList(idx)
+        sList(idx) = tmp
+    End Sub
+    Private Sub MoveItemDown(idx As Long)
+        If idx = UBound(sList) Then Exit Sub 'Already at bottom
+        Dim tmp As tPdfFile
+        tmp = sList(idx + 1)
+        sList(idx + 1) = sList(idx)
+        sList(idx) = tmp
+    End Sub
+    Private Sub RemoveItem(idx As Long)
+        AppendLog "Removing " & sList(idx).sName
+        If UBound(sList) = 0 Then
+            sList(0).sName = ""
+            sList(0).sFullPath = ""
+            nPdf = 0
+            Exit Sub
+        End If
+        Dim tmp() As tPdfFile
+        ReDim tmp(UBound(sList) - 1)
+        Dim i As Long, j As Long
+        For i = 0 To UBound(sList)
+            If i <> idx Then
+                tmp(j) = sList(i)
+                j += 1
+            End If
+        Next
+        sList = tmp
+        nPdf -= 1
+    End Sub
+    Private Sub RebuildList()
+        lstPdf.Clear
+        If nPdf = 0 Then Exit Sub
+        Dim i As Long
+        For i = 0 To UBound(sList)
+            lstPdf.AddItem sList(i).sName
+        Next
+    End Sub
+    
+    Private Sub OnRemoveItem() Handles cmdDel.Click
+        If lstPdf.ListCount = 0 Then Exit Sub
+        RemoveItem lstPdf.ListIndex
+        RebuildList
+    End Sub
+    
+    Private Sub txtRange_Change() Handles txtRange.Change
+        If (lstPdf.ListIndex >= 0) AndAlso (lstPdf.Selected(lstPdf.ListIndex)) Then
+            sList(lstPdf.ListIndex).sMergePages = txtRange.Text
+        End If
+    End Sub
+    
+    Private Sub OnListClick() Handles lstPdf.Click
+        If lstPdf.ListIndex >= 0 Then
+            txtRange.Text = sList(lstPdf.ListIndex).sMergePages
+            Label3.Caption = "Pages in selection: " & GetPdfPageCount(sList(lstPdf.ListIndex))
+        Else
+            Label3.Caption = "No documented selected."
+        End If
+    End Sub
+
+    Private Sub txtIndex_Change() Handles txtIndex.Change
+        sIdx = txtIndex.Text
+    End Sub
+    
+    Private Sub OnRemoveAll() Handles cmdClear.Click
+        lstPdf.Clear
+        ReDim sList(0)
+        nPdf = 0
+    End Sub
+    
+    Private Sub Image1_Click() Handles Image1.Click
+        If nPdf Then
+            Dim i As Long
+            For i = 0 To UBound(sList)
+                sList(i).sMergePages = txtRange.Text
+            Next
+        End If
+    End Sub
+ 
+    Private Sub txtStatus_DblClick() Handles txtStatus.DblClick
+        txtStatus.Text = ""
+    End Sub
+End Class
