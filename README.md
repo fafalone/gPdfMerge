@@ -62,7 +62,7 @@ Et voilà.
  Developed using pdfium builds by pvginkel,\
  32bit: https://github.com/pvginkel/PdfiumBuild/blob/master/Builds/2018-04-08/Pdfium-x86-no_v8-no_xfa/pdfium.dll \
  64bit: https://github.com/pvginkel/PdfiumBuild/blob/master/Builds/2018-04-08/Pdfium-x64-no_v8-no_xfa/pdfium.dll \
- This is an older version; the exact version of pdfium used couldn't be determined (none released on date of builds), the closest match seems to be pdfium 3392. This was done because the 32bit DLL here was known to work in VB6 without issue; in future versions I'll test more recent builds of pdfium.\
+ This is an older version; the exact version of pdfium used couldn't be determined (none released on date of builds), the closest match seems to be pdfium 3392. This was done because the 32bit DLL here was [known to work in VB6](https://www.vbforums.com/showthread.php?882115-PDF-Reader-ActiveX-Control) without issue; in future versions I'll test more recent builds of pdfium.\
  Headers used for declares: https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/3392/public/ \
  Merge routine based on pdfium-cli: https://github.com/klippa-app/pdfium-cli
 
