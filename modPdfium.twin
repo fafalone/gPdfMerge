@@ -157,7 +157,7 @@ Module modPdfium
         Dim nPages As Long
         hr = LoadFileBytes(tPdf.sFullPath, pFile)
         If hr = S_OK Then
-            hDoc = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) - 1, vbNullString)
+            hDoc = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) + 1, vbNullString)
             If hDoc Then
                 nPages = FPDF_GetPageCount(hDoc)
                 FPDF_CloseDocument hDoc
@@ -202,7 +202,7 @@ Module modPdfium
             hDocIn = 0
             hr = LoadFileBytes(tFilesIn(i).sFullPath, pFile)
             If hr = S_OK Then
-                hDocIn = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) - 1, vbNullString)
+                hDocIn = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) + 1, vbNullString)
                 If hDocIn Then
                     nPages = FPDF_GetPageCount(hDocIn)
                     If nPages Then
