@@ -1,7 +1,10 @@
 # gPdfMerge
 GUI-based PDF Merger 
 
-**Latest version:** v1.0.6, 27 Jun 2024
+**Latest version:** v1.0.6.2, 02 July 2024
+
+> [!IMPORTANT]
+> **Critical update: Please download v1.0.6.2.** The initial release contains a bug that truncates the last 2 bytes of PDFs read. This didn't result in any corrupt files in my tests, but it's highly likely to at some point. I apologize for the inconvenience.
 
 ![image](https://github.com/fafalone/gPdfMerge/assets/7834493/0ff980bd-99f2-4f36-b698-1320119c4994)
 
