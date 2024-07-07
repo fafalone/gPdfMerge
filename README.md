@@ -10,6 +10,9 @@ gPdfMerge is a simple utility written in twinBASIC mainly for me to try out usin
 
 **Updates:**
 
+> [!IMPORTANT]
+> Starting with version 1.2, newer builds of pdfium.dll are used. These are obtained from https://github.com/bblanchon/pdfium-binaries/releases. Version 1.2 was tested with 128.0.6569.0 (01 Jul 2024), but newer versions should continue to work fine. Click 'Show all .. assets' to find the Windows versions; the file names you need are `pdfium-win-x86.tgz` and ` pdfium-win-x64.tgz`.  **gPdfMerge v1.2+ will not work with the 2018-era original DLLs used with version 1.0**.
+
 (Version 1.2 - 07 Jul 2024)\
 -Adds a 'Search for pages' function which opens a new dialog you can use to search for a range of pages to merge:
 
