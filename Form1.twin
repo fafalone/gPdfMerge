@@ -2,10 +2,17 @@
 [FormDesignerId("C3B9FBBB-75B9-4EA4-A5AA-C3B0EE4D28D8")]
 [PredeclaredId]
 Class Form1
-    'gPdfMerge v1.0.6
-    'Last update: 27 Jun 2024
+    'gPdfMerge v1.2.14
+    'Last update: 07 Jul 2024
     'by Jon Johnson (fafalone)
     'See full comments in modPdfium.twin
+    
+    'Changes: 
+    'v1.2
+    '  -Add Search for pages function to search for a range to merge.
+    'v1.1
+    '  -Range entry textbox now only enabled if an item is selected.
+    '  -Specifying a single pdf with page range to trim it now supported.
     
     Private Const sStart As String = "Welcome to " & app.title & " v" & app.major & "." & app.minor & "." & app.build & vbCrLf & _
                                     "Double-click this log to clear it."
@@ -92,7 +99,7 @@ Class Form1
     
     Private Sub OnLoad() Handles Form.Load
         SHAutoComplete txtOut.hWnd, SHACF_FILESYS_DIRS
-    
+        AddLog sStart
     End Sub
  
     
@@ -124,8 +131,10 @@ Class Form1
             AppendLog "Error: No files loaded."
             Exit Sub
         ElseIf nPdf = 1 Then
-            AppendLog "Error: Two or more files must be loaded to merge."
-            Exit Sub
+            If sList(0).sMergePages = "" Then
+                AppendLog "Error: Single file selected but no page range set."
+                Exit Sub
+            End If
         End If
         Dim i As Long, r As Long
         For i = 0 To UBound(sList)
@@ -187,6 +196,8 @@ Class Form1
         If UBound(sList) = 0 Then
             sList(0).sName = ""
             sList(0).sFullPath = ""
+            sList(0).nPageCount = 0
+            sList(0).sMergePages = ""
             nPdf = 0
             Exit Sub
         End If
@@ -215,6 +226,14 @@ Class Form1
         If lstPdf.ListCount = 0 Then Exit Sub
         RemoveItem lstPdf.ListIndex
         RebuildList
+        txtRange.Enabled = False
+    End Sub
+    
+    Private Sub OnRemoveAll() Handles cmdClear.Click
+        txtRange.Enabled = False
+        lstPdf.Clear
+        ReDim sList(0)
+        nPdf = 0
     End Sub
     
     Private Sub txtRange_Change() Handles txtRange.Change
@@ -225,6 +244,7 @@ Class Form1
     
     Private Sub OnListClick() Handles lstPdf.Click
         If lstPdf.ListIndex >= 0 Then
+            If txtRange.Enabled = False Then txtRange.Enabled = True
             txtRange.Text = sList(lstPdf.ListIndex).sMergePages
             Label3.Caption = "Pages in selection: " & GetPdfPageCount(sList(lstPdf.ListIndex))
         Else
@@ -236,11 +256,6 @@ Class Form1
         sIdx = txtIndex.Text
     End Sub
     
-    Private Sub OnRemoveAll() Handles cmdClear.Click
-        lstPdf.Clear
-        ReDim sList(0)
-        nPdf = 0
-    End Sub
     
     Private Sub Image1_Click() Handles Image1.Click
         If nPdf Then
@@ -253,5 +268,18 @@ Class Form1
  
     Private Sub txtStatus_DblClick() Handles txtStatus.DblClick
         txtStatus.Text = ""
+    End Sub
+    
+    Private Sub Command1_Click() Handles Command1.Click
+        If lstPdf.ListIndex = -1 Then
+            AppendLog "Please select a file to search."
+            Beep
+            Exit Sub
+        Else
+            nSearch = lstPdf.ListIndex
+            frmSearch.Show vbModal, Me
+            txtRange.Text = sSearchResult
+        End If
+        
     End Sub
 End Class

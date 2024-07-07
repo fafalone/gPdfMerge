@@ -1,0 +1,136 @@
+[Description("")]
+[FormDesignerId("70AE5926-6A19-4429-999D-F0BBD4BA2E1B")]
+[PredeclaredId]
+Class frmSearch
+    Private tRes() As tPdfSearchResult
+    Private nRes As Long
+    Private sRng As String
+    Private sRngCmp As String 'Compressed range; i.e. turn 1,2,3,4 into 1-4. 
+    
+    Private Sub Form_Load() Handles Form.Load
+        lblFile.Caption = sList(nSearch).sName
+        txtRange.Text = sList(nSearch).sMergePages
+        lblPages.Caption = "Pages in current pdf: " & GetPdfPageCount(sList(nSearch))
+        sSearchResult = sSearchResult
+    End Sub
+    
+    Private Sub cmdSearch_Click() Handles cmdSearch.Click
+        If txtSearch.Text = "" Then
+            lblStatus.Caption = "Please enter a search term."
+            Exit Sub
+        Else
+            lblStatus.Caption = ""
+        End If
+        
+        nRes = SearchPDF(sList(nSearch), txtSearch.Text, txtRange.Text, chkCase.Value = vbChecked, chkWord.Value = vbChecked, tRes, CLng(txtCtx.Text))
+        If nRes > 0 Then
+            lblStatus.Caption = ""
+            ' Dim i As Long, j As Long
+            ' For i = 0 To UBound(tRes)
+            '     ' Debug.Print CStr(tRes(i).nCount) & " results from page " & tRes(i).nPage
+            '     For j = 0 To UBound(tRes(i).sContexts)
+            '         Debug.Print vbTab & tRes(i).sContexts(j)
+            '     Next
+            ' Next
+        ElseIf nRes = 0 Then
+            lblStatus.Caption = "No results found."
+        End If
+        ResultsToTree
+        txtResult.Text = GetFullRange()
+    End Sub
+    
+    Private Function GetFullRange() As String
+        sRng = "": sRngCmp = ""
+        If nRes > 0 Then
+            Dim i As Long
+            For i = 0 To UBound(tRes)
+                sRng &= CStr(tRes(i).nPage + 1) & ","
+            Next
+            sRng = Left$(sRng, Len(sRng) - 1) 'Remove trailing comma
+            sRngCmp = CompressRange(sRng)
+        End If
+        Return sRngCmp
+    End Function
+    
+
+    
+    Private Sub ResultsToTree()
+        TreeView1.Nodes.Clear
+        If nRes > 0 Then
+            Dim i As Long, j As Long
+            Dim nodPar As Node
+            Dim nodChild As Node
+            For i = 0 To UBound(tRes)
+                Set nodPar = TreeView1.Nodes.Add(, , , "Page " & CStr(tRes(i).nPage + 1) & " - " & CStr(tRes(i).nCount) & " results.")
+                nodPar.Tag = tRes(i).nPage + 1
+                tRes(i).hNode = nodPar.Handle
+                For j = 0 To UBound(tRes(i).sContexts)
+                    Set nodChild = TreeView1.Nodes.Add(nodPar, tvwChild, , FormatContextStr(tRes(i).sContexts(j), txtSearch.Text, CLng(txtCtx.Text)))
+                    nodChild.Tag = tRes(i).nPage + 1
+                Next
+            Next
+        End If
+    End Sub
+    
+    Private Function FormatContextStr(sCtx As String, sMatch As String, nCtx As Long) As String
+        'Determines if ellipses are needed and if so adds them
+        Dim sTmp As String
+        If InStr(sCtx, sMatch) > nCtx Then
+            sTmp = "..." & sCtx
+        Else
+            sTmp = sCtx
+        End If
+        If chkCase.Value = vbChecked Then
+            If Right$(sCtx, Len(sMatch)) <> sMatch Then
+                sTmp = sTmp & "..."
+            End If
+        Else
+            If LCase$(Right$(sCtx, Len(sMatch))) <> LCase$(sMatch) Then
+                sTmp = sTmp & "..."
+            End If
+        End If
+            
+        Return sTmp
+    End Function
+    
+    Private Sub cmdReset_Click() Handles cmdReset.Click
+        txtResult.Text = GetFullRange()
+    End Sub
+    
+    Private Sub cmdClear_Click() Handles cmdClear.Click
+        sRng = "": sRngCmp = "": txtResult.Text = ""
+    End Sub
+    
+    Private Sub cmdAdd_Click() Handles cmdAdd.Click
+        sRng = AddPageToRange(sRng, CLng(TreeView1.SelectedItem.Tag))
+        sRngCmp = CompressRange(sRng)
+        txtResult.Text = sRngCmp
+    End Sub
+    
+    Private Sub cmdDel_Click() Handles cmdDel.Click
+        sRng = RemovePageFromRange(sRng, CLng(TreeView1.SelectedItem.Tag))
+        sRngCmp = CompressRange(sRng)
+        txtResult.Text = sRngCmp
+    End Sub
+    
+    Private Sub cmdAddAll_Click() Handles cmdAddAll.Click
+        txtResult.Text = GetFullRange()
+    End Sub
+    
+    Private Sub cmdApply_Click() Handles cmdApply.Click
+        If txtResult.Text = "" Then
+            sSearchResult = GetFullRange()
+            sList(nSearch).sMergePages = sSearchResult
+        Else
+            sSearchResult = txtResult.Text
+            sList(nSearch).sMergePages = txtResult.Text
+        End If
+        Unload Me
+    End Sub
+    
+    Private Sub cmdCancel_Click() Handles cmdCancel.Click
+        Unload Me
+    End Sub
+    
+
+End Class

@@ -7,10 +7,10 @@ Module modMain
 
 'Startup, command line handling, and utility function
 
-'Command line usage:
-'Merge: gPdfMerge.exe /i "C:\...\Input1.pdf" "C:\...\Input2.pdf" /o "C:\path\Output.pdf"
-'Append: gPdfMerge.exe /i "C:\...\Input1.pdf" "C:\...\Input2.pdf"
-'Append or merge with ranges and/or insert idx not support via command line in v1.0
+' Command line usage:
+' Merge: gPdfMerge.exe /i "C:\...\Input1.pdf" "C:\...\Input2.pdf" /o "C:\path\Output.pdf"
+' Append: gPdfMerge.exe /i "C:\...\Input1.pdf" "C:\...\Input2.pdf"
+' Append or merge with ranges and/or insert idx not support via command line in v1.0
 
 Public gUI As Boolean
     Public Sub AppendLog(smsg As String)

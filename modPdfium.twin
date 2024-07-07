@@ -1,16 +1,16 @@
 Module modPdfium
     'modPdfium - Pdfium functions for twinBASIC
-    'Last update: 27 Jun 2024
+    'Last update: 07 Jul 2024
     'by Jon Johnson (fafalone)
     '
 
-    'Developed using pdfium builds by pvginkel,
-    '32bit: https://github.com/pvginkel/PdfiumBuild/blob/master/Builds/2018-04-08/Pdfium-x86-no_v8-no_xfa/pdfium.dll
-    '64bit: https://github.com/pvginkel/PdfiumBuild/blob/master/Builds/2018-04-08/Pdfium-x64-no_v8-no_xfa/pdfium.dll
-    'This is an older version; the exact version of pdfium used couldn't be determined (none released on date of 
-    'builds), the closest match seems to be pdfium 3392.
-    'Headers used for declares: https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/3392/public/
+    'Developed using pdfium builds by bblanchon
+    'https://github.com/bblanchon/pdfium-binaries/releases
+    'The last version tested was PDFium 128.0.6569.
     'Merge routine based on pdfium-cli: https://github.com/klippa-app/pdfium-cli
+    '
+    'Special thanks to tB Discord user mike webb for writing the CompressRange
+    '  function and helping beta test everything.
     
     'Note: This module will automatically initialize pdfium on first use, but
     '      program exit routines must be made to call ShutdownPdfium.
@@ -21,10 +21,22 @@ Module modPdfium
         sFullPath As String
         sName As String
         sMergePages As String
+        nPageCount As Long
     End Type
     Public sList() As tPdfFile
     Public nPdf As Long
     Public sIdx As String
+    
+    Public Type tPdfSearchResult
+        nPage As Long 'The page the result is from
+        nCount As Long 'The number of times the search string was found on the page
+        sContexts() As String 'For each match on the page, a string containing 15 chars before, the term, 
+                              'and 15 characters after.
+        hNode As LongPtr
+    End Type
+    Public nSearch As Long
+    Public sSearchResult As String
+    
     Private hFileOut As LongPtr
      ' //
     ' // Version number of the interface. Currently must be 1.
@@ -81,34 +93,41 @@ Module modPdfium
         FPDF_ERR_XFALAYOUT = 8  ' Layout XFA error.
     End Enum
   
-    #If Win64 Then
-    Private Declare PtrSafe Sub FPDF_InitLibrary Lib "PDFium" ()
-    Private Declare PtrSafe Sub FPDF_DestroyLibrary Lib "PDFium" ()
-    Private Declare PtrSafe Function FPDF_CreateNewDocument Lib "PDFium" () As LongPtr
-    Private Declare PtrSafe Function FPDF_LoadMemDocument Lib "PDFium" (ByVal pData As LongPtr, ByVal DataLen As Long, ByVal Password As String) As LongPtr
-    Private Declare PtrSafe Sub FPDF_CloseDocument Lib "PDFium" (ByVal hDoc As LongPtr)
-    Private Declare PtrSafe Function FPDF_GetPageCount Lib "PDFium" (ByVal hDoc As LongPtr) As Long
-    Private Declare PtrSafe Function FPDF_LoadPage Lib "PDFium" (ByVal hDoc As LongPtr, ByVal PageIdx As Long) As LongPtr
-    Private Declare PtrSafe Sub FPDF_ClosePage Lib "PDFium" (ByVal hPage As LongPtr)
-    Private Declare PtrSafe Function FPDF_ImportPages Lib "PDFium" (ByVal dest_doc As LongPtr, ByVal src_doc As LongPtr, ByVal pagerange As String, ByVal index As Long) As Long
-    Private Declare PtrSafe Function FPDF_SaveAsCopy Lib "PDFium" (ByVal document As LongPtr, pFileWrite As FPDF_FILEWRITE, ByVal flags As PdfiumSaveCopyFlags) As BOOL
-    Private Declare PtrSafe Function FPDF_GetLastError Lib "PDFium" () As Long
-    #Else
-    Private Declare Sub FPDF_InitLibrary Lib "PDFium" Alias "_FPDF_InitLibrary@0" ()
-    Private Declare Sub FPDF_DestroyLibrary Lib "PDFium" Alias "_FPDF_DestroyLibrary@0" ()
-    Private Declare Function FPDF_CreateNewDocument Lib "PDFium" Alias "_FPDF_CreateNewDocument@0" () As Long
-    Private Declare Function FPDF_LoadMemDocument Lib "PDFium" Alias "_FPDF_LoadMemDocument@12" (ByVal pData As Long, ByVal DataLen As Long, ByVal Password As String) As Long
-    Private Declare Sub FPDF_CloseDocument Lib "PDFium" Alias "_FPDF_CloseDocument@4" (ByVal hDoc As Long)
-    Private Declare Function FPDF_GetPageCount Lib "PDFium" Alias "_FPDF_GetPageCount@4" (ByVal hDoc As Long) As Long
-    Private Declare Function FPDF_LoadPage Lib "PDFium" Alias "_FPDF_LoadPage@8" (ByVal hDoc As Long, ByVal PageIdx As Long) As Long
-    Private Declare Sub FPDF_ClosePage Lib "PDFium" Alias "_FPDF_ClosePage@4" (ByVal hPage As Long)
-    Private Declare Function FPDF_ImportPages Lib "PDFium" Alias "_FPDF_ImportPages@16" (ByVal dest_doc As Long, ByVal src_doc As Long, ByVal pagerange As String, ByVal index As Long) As Long
-    Private Declare Function FPDF_SaveAsCopy Lib "PDFium" Alias "_FPDF_SaveAsCopy@12" (ByVal document As Long, pFileWrite As FPDF_FILEWRITE, ByVal flags As PdfiumSaveCopyFlags) As BOOL
-    Private Declare Function FPDF_GetLastError Lib "PDFium" Alias "_FPDF_GetLastError@0" () As Long
-    #End If
-
-
+    Public Enum PdfiumSearchFlags
+        ' If not set, it will not match case by default.
+        FPDF_MATCHCASE = &H00000001
+        ' If not set, it will not match the whole word by default.
+        FPDF_MATCHWHOLEWORD = &H00000002
+        ' If not set, it will skip past the current match to look for the next match.
+        FPDF_CONSECUTIVE = &H00000004
+    End Enum
     
+    Private Declare PtrSafe Sub FPDF_InitLibrary CDecl Lib "pdfium" ()
+    Private Declare PtrSafe Sub FPDF_DestroyLibrary CDecl Lib "pdfium" ()
+    Private Declare PtrSafe Function FPDF_CreateNewDocument CDecl Lib "pdfium" () As LongPtr
+    Private Declare PtrSafe Function FPDF_LoadDocument CDecl Lib "pdfium" (ByVal file_path As String, ByVal password As String) As LongPtr
+    Private Declare PtrSafe Function FPDF_LoadMemDocument CDecl Lib "pdfium" (ByVal pData As LongPtr, ByVal DataLen As Long, ByVal Password As String) As LongPtr
+    Private Declare PtrSafe Sub FPDF_CloseDocument CDecl Lib "pdfium" (ByVal hDoc As LongPtr)
+    Private Declare PtrSafe Function FPDF_GetPageCount CDecl Lib "pdfium" (ByVal hDoc As LongPtr) As Long
+    Private Declare PtrSafe Function FPDF_LoadPage CDecl Lib "pdfium" (ByVal hDoc As LongPtr, ByVal PageIdx As Long) As LongPtr
+    Private Declare PtrSafe Sub FPDF_ClosePage CDecl Lib "pdfium" (ByVal hPage As LongPtr)
+    Private Declare PtrSafe Function FPDF_ImportPages CDecl Lib "pdfium" (ByVal dest_doc As LongPtr, ByVal src_doc As LongPtr, ByVal pagerange As String, ByVal index As Long) As Long
+    Private Declare PtrSafe Function FPDF_SaveAsCopy CDecl Lib "pdfium" (ByVal document As LongPtr, pFileWrite As FPDF_FILEWRITE, ByVal flags As PdfiumSaveCopyFlags) As BOOL
+    Private Declare PtrSafe Function FPDF_GetLastError CDecl Lib "pdfium" () As Long
+    Private Declare PtrSafe Function FPDFText_LoadPage CDecl Lib "pdfium" (ByVal page As LongPtr) As LongPtr
+    Private Declare PtrSafe Sub FPDFText_ClosePage CDecl Lib "pdfium" (ByVal text_page As LongPtr)
+    Private Declare PtrSafe Function FPDFText_CountChars CDecl Lib "pdfium" (ByVal text_page As LongPtr) As Long
+    'result is 'As Any' instead of ByRef Integer so you can either use it that official way, or:
+    'Allocate a string and copy into StrPtr. 
+    Private Declare PtrSafe Function FPDFText_GetText CDecl Lib "pdfium" (ByVal text_page As LongPtr, ByVal start_index As Long, ByVal count As Long, result As Any) As Long
+    Private DeclareWide PtrSafe Function FPDFText_FindStart CDecl Lib "pdfium" (ByVal text_page As LongPtr, ByVal findwhat As String, ByVal flags As PdfiumSearchFlags, ByVal start_index As Long) As LongPtr
+    Private Declare PtrSafe Function FPDFText_FindNext CDecl Lib "pdfium" (ByVal handle As LongPtr) As BOOL
+    Private Declare PtrSafe Function FPDFText_FindPrev CDecl Lib "pdfium" (ByVal handle As LongPtr) As BOOL
+    Private Declare PtrSafe Function FPDFText_GetSchResultIndex CDecl Lib "pdfium" (ByVal handle As LongPtr) As Long
+    Private Declare PtrSafe Function FPDFText_GetSchCount CDecl Lib "pdfium" (ByVal handle As LongPtr) As Long
+    Private Declare PtrSafe Sub FPDFText_FindClose CDecl Lib "pdfium" (ByVal handle As LongPtr)
+ 
+
     Public Function GetPdfiumErrorCodesStr(lVal As Long) As String
     Dim sRet As String
      If lVal = FPDF_ERR_SUCCESS Then sRet = "FPDF_ERR_SUCCESS"
@@ -150,6 +169,7 @@ Module modPdfium
     End Sub
     
     Public Function GetPdfPageCount(tPdf As tPdfFile) As Long
+        If tPdf.nPageCount Then Return tPdf.nPageCount
         InitPdfium()
         Dim hDoc As LongPtr
         Dim pFile() As Byte
@@ -167,13 +187,14 @@ Module modPdfium
         Else
             AppendLog "GetPdfPageCount::Couldn't open " & tPdf.sName
         End If
+        tPdf.nPageCount = nPages
         Return nPages
     End Function
     Public Function MergePdfs(sFileOut As String, tFilesIn() As tPdfFile, Optional bTemp As Boolean = False) As Long
         InitPdfium()
         
-        If UBound(tFilesIn) < 1 Then
-            AppendLog "Error: Two or more files must be selected to merge."
+        If UBound(tFilesIn) = 0 Then
+            AppendLog "Error: One or more files must be selected to merge."
             Return E_INVALIDARG
         End If
         AppendLog "Merging " & CStr(UBound(tFilesIn) + 1) & " pdf files..."
@@ -243,7 +264,7 @@ Module modPdfium
             tWrite.WriteBlock = AddressOf WriteBlock
             If FPDF_SaveAsCopy(hDocNew, tWrite, FPDF_NO_INCREMENTAL) Then
                 If bTemp = False Then
-                    AppendLog "Successfully saved merged document (" & nMerged & " pages) to" & sFileOut
+                    AppendLog "Successfully saved merged document (" & nMerged & " pages) to " & sFileOut
                     'When new files don't show up right away, it's because the creating 
                     'app didn't explicitly notify the shell of creation, leaving it to
                     'only add it during a regular check.
@@ -265,8 +286,8 @@ Module modPdfium
     
     Public Function AppendPdfs(tFilesIn() As tPdfFile) As Long
         'Appends additional PDFs to the first in the list
-        If UBound(tFilesIn) < 1 Then
-            AppendLog "Error: At least one additional file must be selected to append."
+        If UBound(tFilesIn) = 0 Then
+            AppendLog "Error: At least one file must be selected to append."
             Return E_INVALIDARG
         End If
         Dim sTmp As String = String$(MAX_PATH, 0)
@@ -298,6 +319,245 @@ Module modPdfium
         End If
         Return S_OK
     End Function
+    
+    Public Function SearchPDF(tPdf As tPdfFile, ByVal sMatch As String, ByVal sRangeToSearch As String, bMatchCase As Boolean, bWholeWord As Boolean, tResults() As tPdfSearchResult, Optional ByVal cchCtx As Long = 15) As Long
+        InitPdfium()
+        ReDim tResults(0)
+        Dim hDoc As LongPtr
+        Dim hPage As LongPtr
+        Dim hText As LongPtr
+        Dim pFile() As Byte
+        Dim hr As Long
+        Dim nPages As Long
+        hr = LoadFileBytes(tPdf.sFullPath, pFile)
+        If hr = S_OK Then
+            hDoc = FPDF_LoadMemDocument(VarPtr(pFile(0)), UBound(pFile) + 1, vbNullString)
+            If hDoc Then
+                nPages = FPDF_GetPageCount(hDoc)
+            End If
+        End If
+        If nPages = 0 Then
+            AppendLog "Couldn't find any pages in " & tPdf.sName
+            Return 0
+        End If
+        
+        Dim i As Long
+        Dim sPage As String
+        Dim sTmp As String
+        Dim cch As Long, cchRet As Long, cchPage As Long
+        Dim ctxStart As Long, ctxEnd As Long
+        Dim hFind As LongPtr, iFind As Long
+        Dim dwFlags As PdfiumSearchFlags
+        Dim nRes As Long, nCtx As Long
+        For i = 0 To nPages - 1
+            If (sRangeToSearch <> "") Then
+                If IsPageInRange(sRangeToSearch, i) = False Then GoTo nxt
+            End If
+            hPage = 0: hText = 0: cch = 0: cchRet = 0: hFind = 0: nCtx = 0
+            hPage = FPDF_LoadPage(hDoc, i)
+            If hPage Then
+                hText = FPDFText_LoadPage(hPage)
+                If hText Then
+                     cchPage = FPDFText_CountChars(hText)
+                    ' If cch Then
+                    '     sPage = String$(cch, 0)
+                    '     cchRet = FPDFText_GetText(hText, 0, cch, ByVal StrPtr(sPage))
+                    '     Debug.Print "cch=" & cch & ",cchret=" & cchRet
+                    '     If bWholeWord Then sMatch = " " & sMatch & " "
+                        
+                    ' End If
+                    If bMatchCase Then dwFlags = FPDF_MATCHCASE
+                    If bWholeWord Then dwFlags = dwFlags Or FPDF_MATCHWHOLEWORD
+                    hFind = FPDFText_FindStart(hText, sMatch, dwFlags, 0)
+                    If hFind = 0 Then GoTo nxt 'nonzero even if no match????
+                    If FPDFText_FindNext(hFind) = CFALSE Then GoTo nxt 'no matches on page
+                    iFind = FPDFText_GetSchResultIndex(hFind)
+                    cch = FPDFText_GetSchCount(hFind)
+                    ReDim Preserve tResults(nRes)
+                    tResults(nRes).nCount = 1
+                    tResults(nRes).nPage = i
+                    ReDim tResults(nRes).sContexts(0)
+                    If iFind < cchCtx Then
+                        ctxStart = 0
+                    Else
+                        ctxStart = iFind - cchCtx
+                    End If
+                    ctxEnd = iFind + cch + cchCtx
+                    If ctxEnd > (cchPage) Then ctxEnd = (cchPage)
+                    tResults(nRes).sContexts(0) = String$((ctxEnd - ctxStart), 0)
+                    cchRet = FPDFText_GetText(hText, ctxStart, (ctxEnd - ctxStart), ByVal StrPtr(tResults(nRes).sContexts(0)))
+                    tResults(nRes).sContexts(0) = Replace(tResults(nRes).sContexts(0), vbCrLf, " ")
+                    tResults(nRes).sContexts(0) = Replace(tResults(nRes).sContexts(0), vbCr, " ")
+                    tResults(nRes).sContexts(0) = Replace(tResults(nRes).sContexts(0), vbLf, " ")
+                    Do While FPDFText_FindNext(hFind)
+                        tResults(nRes).nCount += 1
+                        nCtx += 1
+                        ReDim Preserve tResults(nRes).sContexts(nCtx)
+                        iFind = FPDFText_GetSchResultIndex(hFind)
+                        cch = FPDFText_GetSchCount(hFind)
+                        
+                        If iFind < cchCtx Then
+                            ctxStart = 0
+                        Else
+                            ctxStart = iFind - cchCtx
+                        End If
+                        ctxEnd = iFind + cch + cchCtx
+                        If ctxEnd > (cchPage) Then ctxEnd = (cchPage)
+                        tResults(nRes).sContexts(nCtx) = String$((ctxEnd - ctxStart), 0)
+                        cchRet = FPDFText_GetText(hText, ctxStart, (ctxEnd - ctxStart), ByVal StrPtr(tResults(nRes).sContexts(nCtx)))
+                        tResults(nRes).sContexts(nCtx) = Replace(tResults(nRes).sContexts(nCtx), vbCrLf, " ")
+                        tResults(nRes).sContexts(nCtx) = Replace(tResults(nRes).sContexts(nCtx), vbCr, " ")
+                        tResults(nRes).sContexts(nCtx) = Replace(tResults(nRes).sContexts(nCtx), vbLf, " ")
+                    Loop
+                    nRes += 1
+                End If
+            End If
+nxt:
+            If hFind Then FPDFText_FindClose(hFind): hFind = 0 'have to be careful; duplicate close call = hard crash.
+            If hText Then FPDFText_ClosePage(hText): hText = 0
+            If hPage Then FPDF_ClosePage(hPage): hPage = 0
+        Next
+        
+out:
+    If hFind Then FPDFText_FindClose(hFind)
+    If hText Then FPDFText_ClosePage(hText)
+    If hPage Then FPDF_ClosePage(hPage)
+    If hDoc Then FPDF_CloseDocument(hDoc)
+    Return nRes
+    
+    End Function
+    
+    Public Function CompressRange(ByVal InputString As String) As String
+        ' Thanks to mike webb for contributing this function
+        
+        ' Dim InputString As String
+        ' InputString = "2,6,13"
+        'InputString = "6,7,8,11,12,13"
+        'InputString = "2,3,6,7,8,9,10,13"
+        'InputString = "2,6,7,8,9,10,13"
+        'InputString = "2,6,13,14"
+        
+        Dim StrArr() As String
+        StrArr = Split(InputString, ",") 'thanks Paul Eugin, live long and prosper
+        Dim NumOfNums As Long:NumOfNums = UBound(StrArr)
+        'so now all is within a string array and i know how long the array is.
+        'time to get busy.
+        
+        Dim Pos As Long: Pos = 0
+        Dim CurNum As Long
+        Dim NextNum As Long
+        Dim FinalString As String 'string that contains "the answer"
+        Dim FindingTheRange As Boolean
+        Dim RangeCounter As Long: RangeCounter = 1
+        Dim FirstOfRange As Long:FirstOfRange = 0
+        Dim LastOfRange As Long
+                
+        Do Until Pos > NumOfNums 'loop thru the string array
+            FirstOfRange = Pos
+            LastOfRange = Pos + 1
+            If LastOfRange > NumOfNums Then 'check here to make sure it not out of bounds
+                LastOfRange = Pos
+            End If
+            FindingTheRange = True
+            Do Until FindingTheRange = False 'mini loop to find the length of a range
+                CurNum = CLng(StrArr(FirstOfRange)) 'take 2 numbers, if the second number is one
+                NextNum = CLng(StrArr(LastOfRange)) 'higher than the first number then we are
+                                                   'finding-the-range     
+                If CurNum <> NextNum - 1 Then
+                    FindingTheRange = False         'we have found the range, leave this mini loop
+                End If
+                
+                If CurNum = NextNum - 1 Then            'we are still looking for the end of the range
+                    FirstOfRange = FirstOfRange + 1     'stay in the mini loop
+                    RangeCounter = RangeCounter + 1
+                    LastOfRange = LastOfRange + 1
+                    If LastOfRange > NumOfNums Then 'we are at the end of the array, so we
+                        FindingTheRange = False     'are no longing "finding the range", leave mini loop
+                        Exit Do
+                    End If
+                End If
+            Loop
+                      
+            If FindingTheRange = False Then 'we are ready to write
+                
+                If RangeCounter > 1 Then 'do this stuff if the range is greater than 1 number
+                     FinalString = FinalString & StrArr(Pos) & "-" & StrArr(LastOfRange - 1)
+                     Pos = LastOfRange
+                     RangeCounter = 1
+                Else 'OR do this stuff if the range is only 1 number.
+                     FinalString = FinalString & StrArr(FirstOfRange)
+                    Pos = Pos + 1
+                End If
+                FinalString = FinalString & "," 'everytime you write to finalstring add comma to end.
+            End If
+        Loop
+        'final prep of "the answer"
+        FinalString = Left$(FinalString, Len(FinalString) - 1) 'remove last comma of finalstring
+        Return FinalString
+    End Function
+    Public Function AddPageToRange(sRng As String, nPage As Long) As String
+    'Maintains ascending order. Uncompressed range only.
+        If sRng = "" Then Return CStr(nPage)
+        Dim sR() As String
+        sR = Split(sRng, ",")
+        If UBound(sR) = 0 Then
+            If nPage < sR(0) Then
+                Return CStr(nPage) & "," & sRng
+            ElseIf (CStr(nPage) = sRng) Then
+                Return sRng
+            Else
+                Return sRng & "," & CStr(nPage)
+            End If
+        End If
+        Dim sTmp As String
+        If nPage < CLng(sR(0)) Then
+            Return CStr(nPage) & "," & sRng
+        End If
+        If nPage > CLng(sR(UBound(sR))) Then
+            Return sRng & "," & CStr(nPage)
+        End If
+        If nPage = CLng(sR(0)) Then
+            Return sRng
+        End If
+        If nPage = CLng(sR(UBound(sR))) Then
+            Return sRng
+        End If
+        If Len(sRng) >= (Len(CStr(nPage)) + 2) Then
+            'If it isn't = last or first, it must be ,n, if it already exists
+            If InStr(sRng, "," & CStr(nPage) & ",") Then
+                Return sRng
+            End If
+        End If
+        'Our special cases above have now ruled out the inserted page
+        'needing to be last, or first, or already existing
+        Dim i As Long
+        For i = 0 To UBound(sR)
+            If i = 0 Then
+                sTmp = sR(i)
+            Else
+                sTmp = sTmp & "," & sR(i)
+            End If
+            If i < UBound(sR) Then
+                If (nPage > CLng(sR(i))) And (nPage < (CLng(sR(i + 1)))) Then
+                    sTmp = sTmp & "," & CStr(nPage)
+                End If
+            End If
+        Next
+        Return sTmp
+    End Function
+    Public Function RemovePageFromRange(sRng As String, nPage As Long) As String
+        'Maintains ascending order. Uncompressed range only.
+        If sRng = CStr(nPage) Then Return ""
+        If Left$(sRng, Len(CStr(nPage)) + 1) = CStr(nPage) & "," Then
+            Return Mid$(sRng, InStr(sRng, ",") + 1)
+        End If
+        If Right$(sRng, Len(CStr(nPage)) + 1) = "," & CStr(nPage) Then
+            Return Left$(sRng, Len(sRng) - ((Len(CStr(nPage)) + 1)))
+        End If
+        'If it isn't = last or first, it must be ,n, if it already exists
+        Return Replace(sRng, "," & CStr(nPage) & ",", ",")
+    End Function
+    
     Private Function GetFolderFromPath(sFile As String) As String
         If InStr(sFile, "\") Then
         GetFolderFromPath = Left$(sFile, InStrRev(sFile, "\") - 1)
@@ -345,6 +605,32 @@ Module modPdfium
             End If
         Next
         Return n
+        Exit Function
+    e0:
+        AppendLog "Error processing range " & ChrW$(34) & sRange & ChrW$(34)
+    End Function
+    'For consistency, a page index (0-based) is supplied, and this function will adjust it by 1
+    Public Function IsPageInRange(sRange As String, ByVal nPage As Long) As Boolean
+        On Error GoTo e0
+        nPage += 1
+        Dim sSub() As String
+        sSub = Split(sRange, ",")
+        Dim st1 As String, st2 As String
+        Dim n As Long
+        Dim i As Long
+        For i = 0 To UBound(sSub)
+            sSub(i) = Replace$(sSub(i), " ", "")
+            If InStr(sSub(i), "-") Then
+                st1 = Left$(sSub(i), InStr(sSub(i), "-") - 1)
+                st2 = Mid$(sSub(i), InStr(sSub(i), "-") + 1)
+                If ((nPage >= CLng(st1)) And (nPage <= CLng(st2))) Then
+                    Return True
+                End If
+            Else 'Single page
+                If CLng(sSub(i)) = nPage Then Return True
+            End If
+        Next
+         
         Exit Function
     e0:
         AppendLog "Error processing range " & ChrW$(34) & sRange & ChrW$(34)
