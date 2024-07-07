@@ -81,7 +81,7 @@ Et voilà.
  Headers used for declares: https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/3392/public/ \
  Merge routine based on pdfium-cli: https://github.com/klippa-app/pdfium-cli
 
-Also thanks to tB Discord user mike webb for getting me interested in this and helping test the program while under development.
+Also special thanks to tB Discord user mike webb for getting me interested in this and helping test the program while under development. mike also contributed the code for the CompressRange function in v1.2-- very good work, I was having trouble getting my head around it!
  
 
  **Command line**\
