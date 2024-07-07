@@ -2,7 +2,7 @@
 [FormDesignerId("C3B9FBBB-75B9-4EA4-A5AA-C3B0EE4D28D8")]
 [PredeclaredId]
 Class Form1
-    'gPdfMerge v1.2.14
+    'gPdfMerge v1.2.15
     'Last update: 07 Jul 2024
     'by Jon Johnson (fafalone)
     'See full comments in modPdfium.twin

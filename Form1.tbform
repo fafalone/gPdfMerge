@@ -79,7 +79,7 @@
 			"showGrid": true,
 			"showOutlines": false
 		},
-		"__lastUpdateMarker": 3423385230,
+		"__lastUpdateMarker": 3512140555,
 		"_children": [
 			{
 				"Anchors": {
@@ -1005,7 +1005,7 @@
 				"BackColor": -2147483633,
 				"BackStyle": "vbBFOpaque",
 				"BorderStyle": "vbNoBorder",
-				"Caption": "gPdfMerge v1.0.6",
+				"Caption": "gPdfMerge v1.2.15",
 				"DataField": null,
 				"DataFormat": null,
 				"DataMember": null,
@@ -1046,7 +1046,8 @@
 				"WordWrap": false,
 				"_className": "Label",
 				"_clsid": "{33AD4ED8-6699-11CF-B70C-00AA0060D393}",
-				"_paintedByParent": true
+				"_paintedByParent": true,
+				"_propertyChanged_Caption": true
 			},
 			{
 				"Anchors": {
