@@ -1,14 +1,23 @@
 # gPdfMerge
 GUI-based PDF Merger 
 
-**Latest version:** v1.0.6.2, 02 July 2024
-
-> [!IMPORTANT]
-> **Critical update: Please download v1.0.6.2.** The initial release contains a bug that truncates the last 2 bytes of PDFs read. This didn't result in any corrupt files in my tests, but it's highly likely to at some point. I apologize for the inconvenience.
+**Latest version:** v1.2.14, 07 July 2024
 
 ![image](https://github.com/fafalone/gPdfMerge/assets/7834493/0ff980bd-99f2-4f36-b698-1320119c4994)
 
 gPdfMerge is a simple utility written in twinBASIC mainly for me to try out using pdfium.dll, Google's open source PDF utility. It will merge the selected PDFs together, either into a new file, or into the first file on the list. You can optionally specify which pages in each document should be merged, and if you're appending the first in list, where to insert them at. That's all there is to it right now; just a brief experiment before I make a 64bit version of a more complex PDF control.
+
+
+**Updates:**
+
+(Version 1.2 - 07 Jul 2024)\
+-Adds a 'Search for pages' function which opens a new dialog you can use to search for a range of pages to merge:
+
+![image](https://github.com/fafalone/gPdfMerge/assets/7834493/6370de38-ea8c-4f40-91cc-c895c1456e7d)
+
+(Version 1.1)\
+-Range entry textbox now only enabled if an item is selected.\
+-Specifying a single pdf with page range to trim it now supported.
 
 **Build notes:**\
 The project is configured as follows:\
